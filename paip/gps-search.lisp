@@ -4,11 +4,12 @@
 (defparameter *ops* nil)
 
 (defun action-p (x)
-  "Is x something that is (start) or (executing ...)?"
   (or (equal x '(start)) (executing-p x)))
 
-(defun gps-search (start goal &optional (beam-width 10))
-  "Search for a sequence of operators leading to a goal."
+(defun executing-p (x)
+  (starts-with x 'executing))
+
+(defun gps-search (start goal &optional (beam-width 10) (blocks '(a b c)))
   (find-all-if  #'action-p
 		(beam-search (cons '(start) start)
 			     #'(lambda (state) (subsetp goal state :test #'equal))
@@ -20,8 +21,7 @@
 					      goal)))
 			     beam-width)))
 
-(defun gps-successors (state)
-  "Return a list of states reachable from this one using ops."
+(defun gps-successors (state &optional (blocks '(a b c)))
   (mapcar #'(lambda (op)
 	      (append
 	       (remove-if #'(lambda (x)
@@ -30,8 +30,30 @@
 	       (op-add-list op)))
 	  (applicable-ops state)))
 
-(defun applicable-ops (state)
-  "Return a list of all ops that are applicable now."
+(defun applicable-ops (state &optional (blocks '(a b c)))
   (find-all-if #'(lambda (op)
 		   (subsetp (op-preconds op) state :test #'equal))
-	       *ops*))
+	       (make-block-ops blocks)))
+
+(defun make-block-ops (blocks)
+  (let ((ops nil))
+    (dolist (a blocks)
+      (dolist (b blocks)
+        (unless (equal a b)
+          (dolist (c blocks)
+            (unless (or (equal c a) (equal c b))
+              (push (move-op a b c) ops)))
+          (push (move-op a 'table b) ops)
+          (push (move-op a b 'table) ops))))
+    ops))
+
+(defun move-op (a b c)
+  (op `(move ,a from ,b to ,c)
+      :preconds `((space on ,a) (space on ,c) (,a on ,b))
+      :add-list (move-ons a b c)
+      :del-list (move-ons a c b)))
+
+(defun move-ons (a b c)
+  (if (eq b 'table)
+      `((,a on ,c))
+      `((,a on ,c) (space on ,b))))
